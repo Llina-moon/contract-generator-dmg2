@@ -1,177 +1,180 @@
-/* ====== Общий стиль ====== */
-body {
-  margin: 0;
-  font-family: 'Montserrat', sans-serif;
-  color: #fff;
-  background: #000;
+/* ====== Токены / тема ====== */
+:root{
+  --bg0:#0a0b0f;
+  --bg1:#0f1117;
+  --bg2:#151925;
+  --text:#e9edf5;
+  --muted:#9aa3b2;
+  --accent:#e74a4a;
+  --accent-2:#ff7a7a;
+  --border:rgba(255,255,255,.08);
+  --glass:rgba(255,255,255,.06);
+  --glass-strong:rgba(255,255,255,.1);
+  --shadow:0 10px 30px rgba(0,0,0,.35);
+  --radius:12px;
+  --radius-lg:16px;
+  --radius-sm:8px;
+  --gap:14px;
 }
 
-.wrap {
-  max-width: 1100px;
-  margin: 0 auto;
-  padding: 0 20px;
+/* ====== База ====== */
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;
+  font-family:'Montserrat',system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,'Helvetica Neue',Arial,'Noto Sans',sans-serif;
+  color:var(--text);
+  background: radial-gradient(1200px 800px at 10% -10%, #1b1f2e 0%, transparent 60%),
+              radial-gradient(1000px 900px at 110% 10%, #211527 0%, transparent 55%),
+              linear-gradient(180deg, var(--bg0), var(--bg1));
 }
 
-.bg {
-  position: fixed;
-  inset: 0;
-  background: linear-gradient(135deg, #7a0c0c, #000000);
-  z-index: -1;
-}
+/* контейнеры */
+.wrap{max-width:1120px;margin:0 auto;padding:0 20px}
 
 /* ====== Шапка ====== */
-.header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 20px 0;
+.header{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:22px 0 18px; position:sticky; top:0; z-index:20;
+  backdrop-filter:saturate(140%) blur(8px);
+  background:linear-gradient(to bottom, rgba(10,11,15,.75), rgba(10,11,15,.35) 70%, transparent);
+}
+.brand{display:flex;align-items:flex-start;gap:6px}
+.logo{
+  width:38px;height:38px;border-radius:10px;
+  background:linear-gradient(145deg,#ff5252,#a8002e 60%,#ff9d2d);
+  display:grid;place-items:center;font-weight:700;color:#fff;letter-spacing:.5px;
+  box-shadow:0 6px 18px rgba(255,82,82,.35);
+}
+.logo::before{content:"DMG"}
+.title{font-size:13px;color:var(--muted);margin-top:2px}
+
+.nav{display:flex;gap:10px}
+
+/* ====== Кнопки ====== */
+.btn{
+  padding:9px 14px;font-size:14px;line-height:1;text-decoration:none;color:var(--text);
+  border:1px solid var(--border);border-radius:10px;background:rgba(255,255,255,.02);
+  transition:color .25s ease, background-color .25s ease, border-color .25s ease, box-shadow .25s ease, transform .12s ease;
+  position:relative;display:inline-flex;align-items:center;gap:8px;
+}
+.btn:hover{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.18)}
+.btn:active{transform:translateY(1px)}
+.btn.ghost{background:transparent}
+.btn.outline{background:transparent;border-color:rgba(255,255,255,.35)}
+.btn.solid{background:linear-gradient(180deg,#2a2f3f,#1b2030);border-color:rgba(255,255,255,.14);box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}
+.btn.solid:hover{background:linear-gradient(180deg,#32384c,#23293b)}
+
+/* Активная вкладка */
+.nav .btn.active{
+  font-weight:600;color:#fff;background:rgba(255,255,255,.12);
+  border-color:rgba(255,255,255,.35);box-shadow:0 6px 16px rgba(0,0,0,.2), inset 0 0 0 1px rgba(255,255,255,.08);
+  animation:navActiveFadeIn .35s ease-out both;
+}
+.nav .btn.active:hover{background:rgba(255,255,255,.18)}
+.nav .btn.active::after{
+  content:"";position:absolute;left:12%;right:12%;bottom:-4px;height:2px;border-radius:2px;
+  background:linear-gradient(90deg,transparent, var(--accent), var(--accent-2), transparent);
+  animation:underlineFadeIn .35s ease-out both;
 }
 
-.brand {
-  display: flex;
-  flex-direction: column;
+/* ====== Карточки/блоки ====== */
+.card{
+  background:linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02));
+  border:1px solid var(--border); border-radius:var(--radius); padding:18px;
+  box-shadow:var(--shadow);
+}
+.card + .card{margin-top:14px}
+
+.main{padding:22px 0 64px}
+
+/* Заголовки */
+h1{font-size:24px;margin:6px 0 12px;font-weight:700;letter-spacing:.2px}
+h2{font-size:18px;margin:0 0 12px;font-weight:700}
+h3{font-size:15px;margin:0 0 10px;font-weight:600}
+.muted{color:var(--muted)}
+
+/* ====== Формы ====== */
+.grid{display:grid;gap:var(--gap)}
+@media (min-width:740px){ .grid{grid-template-columns:repeat(2,1fr)} }
+.field{display:flex;flex-direction:column;gap:6px}
+.field > span{font-size:12px;color:var(--muted)}
+input[type="text"], input[type="date"], input[type="number"], select{
+  width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--border);
+  background:rgba(255,255,255,.04); color:var(--text); outline:none;
+  transition:border-color .2s ease, box-shadow .2s ease, background-color .2s ease;
+}
+input::placeholder{color:#8c94a3}
+input:focus, select:focus{border-color:rgba(255,255,255,.35); box-shadow:0 0 0 3px rgba(231,74,74,.18)}
+.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
+
+/* Чипсы/переключатели */
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{display:inline-flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--border);
+  background:rgba(255,255,255,.03);border-radius:999px;color:var(--text);cursor:pointer;user-select:none}
+.chip input{accent-color:var(--accent)}
+.chip:hover{border-color:rgba(255,255,255,.22);background:rgba(255,255,255,.06)}
+
+/* Список файлов/треков */
+.files{list-style:none;margin:8px 0 0;padding:0;display:flex;flex-direction:column;gap:8px}
+.files li{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--border);
+  border-radius:10px;background:rgba(255,255,255,.03)}
+.files li:hover{border-color:rgba(255,255,255,.22);background:rgba(255,255,255,.06)}
+.files input[type="checkbox"]{accent-color:var(--accent)}
+
+/* Таблицы (если где-то используются) */
+table{width:100%;border-collapse:separate;border-spacing:0;margin-top:8px;overflow:hidden;border-radius:10px}
+thead th{
+  text-align:left;font-size:12px;color:var(--muted);font-weight:600;letter-spacing:.3px;
+  background:rgba(255,255,255,.04);padding:10px;border-bottom:1px solid var(--border)
+}
+tbody td{padding:10px;border-bottom:1px solid var(--border)}
+tbody tr:hover td{background:rgba(255,255,255,.03)}
+
+/* ====== Autocomplete ====== */
+.autocomplete-list{
+  position:absolute;
+  left:0; right:0; top: calc(100% + 6px);
+  background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03));
+  border:1px solid var(--border);
+  border-radius:10px;
+  box-shadow: var(--shadow);
+  max-height: 260px;
+  overflow:auto;
+  z-index: 50;
 }
 
-.logo {
-  font-size: 24px;
-  font-weight: 700;
-  line-height: 1;
+.autocomplete-item{
+  padding:10px 12px;
+  cursor:pointer;
+  border-bottom:1px solid rgba(255,255,255,.06);
 }
-
-.title {
-  font-size: 14px;
-  opacity: 0.8;
-}
-
-/* ====== Навигация ====== */
-.nav {
-  display: flex;
-  gap: 10px;
-}
-
-.btn {
-  padding: 8px 14px;
-  font-size: 14px;
-  text-decoration: none;
-  border: 1px solid transparent;
-  background: transparent;
-  color: inherit;
-  border-radius: 8px;
-  transition: color .25s ease, background-color .25s ease, border-color .25s ease, box-shadow .25s ease;
-  position: relative;
-}
-
-/* Обводочная кнопка */
-.btn.outline {
-  border-color: currentColor;
-}
-
-/* Призрачная кнопка */
-.btn.ghost {
-  border-color: rgba(255,255,255,.35);
-}
-
-/* Hover эффект */
-.btn:hover {
-  background-color: rgba(255,255,255,.08);
-  border-color: rgba(255,255,255,.6);
-}
-
-/* ====== Активная кнопка ====== */
-.nav .btn.active {
-  font-weight: 600;
-  color: #fff;
-  background-color: rgba(255,255,255,.14);
-  border-color: rgba(255,255,255,.65);
-  box-shadow: 0 2px 10px rgba(0,0,0,.15), inset 0 0 0 1px rgba(255,255,255,.08);
-  animation: navActiveFadeIn .35s ease-out both;
-}
-
-/* Акцентная полоска снизу */
-.nav .btn.active::after {
-  content: "";
-  position: absolute;
-  left: 10%;
-  right: 10%;
-  bottom: -3px;
-  height: 2px;
-  background-color: #ff4d4d; /* можно поменять цвет акцента */
-  border-radius: 2px;
-  animation: underlineFadeIn .35s ease-out both;
-}
-
-.nav .btn.active:hover {
-  background-color: rgba(255,255,255,.22);
-  border-color: rgba(255,255,255,.8);
-  box-shadow: 0 3px 14px rgba(0,0,0,.18), inset 0 0 0 1px rgba(255,255,255,.1);
-}
-
-.nav .btn:not(.active):hover {
-  background-color: rgba(255,255,255,.08);
-  border-color: rgba(255,255,255,.35);
-}
-
-/* ====== Анимации ====== */
-@keyframes navActiveFadeIn {
-  from { background-color: rgba(255,255,255,0); box-shadow: 0 0 0 rgba(0,0,0,0); }
-  to   { background-color: rgba(255,255,255,.14); box-shadow: 0 2px 10px rgba(0,0,0,.15), inset 0 0 0 1px rgba(255,255,255,.08); }
-}
-
-@keyframes underlineFadeIn {
-  from { transform: scaleX(0); opacity: 0; }
-  to   { transform: scaleX(1); opacity: 1; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .nav .btn,
-  .nav .btn.active,
-  .nav .btn.active:hover,
-  .nav .btn:not(.active):hover {
-    transition: none !important;
-    animation: none !important;
-  }
-  .nav .btn.active::after {
-    animation: none !important;
-  }
-}
-
-/* ====== Основная область ====== */
-.main {
-  padding: 20px 0 60px;
+.autocomplete-item:last-child{ border-bottom:0; }
+.autocomplete-item:hover,
+.autocomplete-item:focus{
+  background: rgba(255,255,255,.10);
+  outline: none;
 }
 
 /* ====== Flash-сообщения ====== */
-.flash {
-  list-style: none;
-  margin: 0 0 20px;
-  padding: 0;
-}
-
-.flash li {
-  padding: 10px 15px;
-  margin-bottom: 8px;
-  border-radius: 6px;
-}
-
-.flash li.warning {
-  background-color: rgba(255, 193, 7, 0.15);
-  border: 1px solid rgba(255, 193, 7, 0.5);
-}
-
-.flash li.error {
-  background-color: rgba(220, 53, 69, 0.15);
-  border: 1px solid rgba(220, 53, 69, 0.5);
-}
-
-.flash li.success {
-  background-color: rgba(40, 167, 69, 0.15);
-  border: 1px solid rgba(40, 167, 69, 0.5);
-}
+.flash{list-style:none;margin:0 0 16px;padding:0}
+.flash li{padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:rgba(255,255,255,.03)}
+.flash li.warning{border-color:rgba(255,193,7,.55); background:rgba(255,193,7,.12)}
+.flash li.error  {border-color:rgba(220,53,69,.55);  background:rgba(220,53,69,.12)}
+.flash li.success{border-color:rgba(40,167,69,.55);  background:rgba(40,167,69,.12)}
 
 /* ====== Подвал ====== */
-.footer {
-  font-size: 13px;
-  opacity: 0.7;
-  text-align: center;
-  padding: 20px 0;
+.footer{font-size:13px;color:var(--muted);text-align:center;padding:22px 0}
+
+/* ====== Анимации/доступность ====== */
+@keyframes navActiveFadeIn{
+  from{background:rgba(255,255,255,0); box-shadow:0 0 0 rgba(0,0,0,0)}
+  to  {background:rgba(255,255,255,.12); box-shadow:0 6px 16px rgba(0,0,0,.2), inset 0 0 0 1px rgba(255,255,255,.08)}
+}
+@keyframes underlineFadeIn{
+  from{transform:scaleX(0); opacity:0}
+  to  {transform:scaleX(1); opacity:1}
+}
+@media (prefers-reduced-motion:reduce){
+  *, *::before, *::after{animation:none!important; transition:none!important}
 }
