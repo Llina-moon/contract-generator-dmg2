@@ -1,7 +1,7 @@
 /* ====== Токены / тема ====== */
 :root{
   --bg0:#0a0b0f;
-  --bg1:#0f1117;
+  --bg1:#0d0a0a;
   --bg2:#151925;
   --text:#e9edf5;
   --muted:#9aa3b2;
@@ -24,9 +24,18 @@ body{
   margin:0;
   font-family:'Montserrat',system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,'Helvetica Neue',Arial,'Noto Sans',sans-serif;
   color:var(--text);
-  background: radial-gradient(1200px 800px at 10% -10%, #1b1f2e 0%, transparent 60%),
-              radial-gradient(1000px 900px at 110% 10%, #211527 0%, transparent 55%),
-              linear-gradient(180deg, var(--bg0), var(--bg1));
+  background: linear-gradient(180deg, var(--bg0), var(--bg1));
+}
+
+/* фон-градient (чёрно-красный) */
+.bg{
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(920px 680px at 15% -10%, rgba(180, 0, 30, .35) 0%, transparent 60%),
+    radial-gradient(1000px 850px at 110% 10%, rgba(255, 60, 60, .22) 0%, transparent 55%),
+    radial-gradient(700px 600px at 50% 120%, rgba(120, 0, 0, .25) 0%, transparent 60%);
+  z-index: -1;
 }
 
 /* контейнеры */
@@ -80,7 +89,7 @@ body{
 
 /* ====== Карточки/блоки ====== */
 .card{
-  background:linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02));
+  background:linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.03));
   border:1px solid var(--border); border-radius:var(--radius); padding:18px;
   box-shadow:var(--shadow);
 }
@@ -97,12 +106,13 @@ h3{font-size:15px;margin:0 0 10px;font-weight:600}
 /* ====== Формы ====== */
 .grid{display:grid;gap:var(--gap)}
 @media (min-width:740px){ .grid{grid-template-columns:repeat(2,1fr)} }
-.field{display:flex;flex-direction:column;gap:6px}
+.field{display:flex;flex-direction:column;gap:6px; position: relative;}
 .field > span{font-size:12px;color:var(--muted)}
 input[type="text"], input[type="date"], input[type="number"], select{
   width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--border);
-  background:rgba(255,255,255,.04); color:var(--text); outline:none;
+  background:rgba(255,255,255,.06); color:var(--text); outline:none;
   transition:border-color .2s ease, box-shadow .2s ease, background-color .2s ease;
+  backdrop-filter: blur(2px);
 }
 input::placeholder{color:#8c94a3}
 input:focus, select:focus{border-color:rgba(255,255,255,.35); box-shadow:0 0 0 3px rgba(231,74,74,.18)}
@@ -131,17 +141,18 @@ thead th{
 tbody td{padding:10px;border-bottom:1px solid var(--border)}
 tbody tr:hover td{background:rgba(255,255,255,.03)}
 
-/* ====== Autocomplete ====== */
+/* ====== Autocomplete (плотный, не белый) ====== */
 .autocomplete-list{
   position:absolute;
   left:0; right:0; top: calc(100% + 6px);
-  background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03));
-  border:1px solid var(--border);
+  background: linear-gradient(180deg, rgba(20,22,28,.94), rgba(20,22,28,.90));
+  border:1px solid rgba(255,255,255,.12);
   border-radius:10px;
-  box-shadow: var(--shadow);
+  box-shadow: 0 10px 24px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.04);
   max-height: 260px;
   overflow:auto;
   z-index: 50;
+  backdrop-filter: blur(6px) saturate(120%);
 }
 
 .autocomplete-item{
