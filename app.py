@@ -65,83 +65,53 @@ def replace_placeholders_preserve_runs(paragraph, mapping):
     """
     if not paragraph.runs:
         return
-
     run_texts = [r.text or "" for r in paragraph.runs]
     full = "".join(run_texts)
     if not full:
         return
-
     matches = list(PLACEHOLDER_RE.finditer(full))
     if not matches:
         return
-
-    # префиксные суммы для маппинга глобального индекса к (run_idx, offset)
     lengths = [len(t) for t in run_texts]
-    cumul = []
-    s = 0
+    cumul, s = [], 0
     for L in lengths:
         cumul.append(s); s += L
-
     def locate(pos: int):
         i = 0
         while i + 1 < len(cumul) and cumul[i + 1] <= pos:
             i += 1
         return i, pos - cumul[i]
-
-    # идём с конца, чтобы индексы не съезжали
     for m in reversed(matches):
         ph_text = m.group(0)
         if ph_text not in mapping:
             continue
         value = mapping[ph_text]
-
-        start, end = m.start(), m.end()
-        si, so = locate(start)
-        ei, eo = locate(end - 1)
-
+        si, so = locate(m.start())
+        ei, eo = locate(m.end() - 1)
         if si == ei:
             r = paragraph.runs[si]
             t = r.text or ""
-            before = t[:so]
-            after = t[eo + 1:]
-            r.text = before + value + after
-            try:
-                r.font.color.rgb = RGBColor(0, 0, 0)
-            except Exception:
-                pass
+            r.text = t[:so] + value + t[eo + 1:]
+            try: r.font.color.rgb = RGBColor(0, 0, 0)
+            except: pass
         else:
-            r_start = paragraph.runs[si]
-            r_end   = paragraph.runs[ei]
-
-            t_start = r_start.text or ""
-            t_end   = r_end.text or ""
-
-            before = t_start[:so]
-            after  = t_end[eo + 1:]
-
-            r_start.text = before + value
-            try:
-                r_start.font.color.rgb = RGBColor(0, 0, 0)
-            except Exception:
-                pass
-
-            r_end.text = after
-
-            # промежуточные run'ы очищаем
+            r_start, r_end = paragraph.runs[si], paragraph.runs[ei]
+            t_start, t_end = (r_start.text or ""), (r_end.text or "")
+            r_start.text = t_start[:so] + value
+            try: r_start.font.color.rgb = RGBColor(0, 0, 0)
+            except: pass
+            r_end.text = t_end[eo + 1:]
             for idx in range(si + 1, ei):
                 paragraph.runs[idx].text = ""
 
 def replace_in_doc(doc, mapping):
-    # основной текст
     for p in doc.paragraphs:
         replace_placeholders_preserve_runs(p, mapping)
-    # таблицы
     for t in doc.tables:
         for row in t.rows:
             for cell in row.cells:
                 for p in cell.paragraphs:
                     replace_placeholders_preserve_runs(p, mapping)
-    # колонтитулы
     for section in doc.sections:
         for p in section.header.paragraphs:
             replace_placeholders_preserve_runs(p, mapping)
@@ -195,7 +165,7 @@ def set_row_cells(row, values):
 def clone_row(table: Table, template_idx: int):
     """Клонируем строку таблицы (переносим стиль первого параграфа)."""
     new = table.add_row()
-    for i, cell in enumerate(table.rows[template_idx].cells):
+    for i, cell in enumerate(table.rows[template_row_idx].cells):
         if i < len(new.cells):
             if cell.paragraphs and new.cells[i].paragraphs:
                 new.cells[i].paragraphs[0].style = cell.paragraphs[0].style
@@ -232,6 +202,7 @@ def fill_appendix_table(doc: Document, df: pd.DataFrame):
     """Заполняем таблицу Приложения 1, нумеруем строки с 1, расширяем на любое кол-во треков."""
     table = get_appendix_table(doc)
     # Часто: 1-я строка — заголовки, 2-я — строка-образец
+    global template_row_idx
     template_row_idx = 1 if len(table.rows) > 1 else 0
 
     rows = df.to_dict(orient="records")
@@ -314,14 +285,14 @@ def appendix():
     artist_q = request.args.get("artist", "").strip()
     tracks = None
     placeholders = []
-    # достаём плейсхолдеры из шаблона приложения, чтобы показать инпуты
+    # плейсхолдеры из шаблона приложения
     appx_path = os.path.join(TEMPLATE_DIR, APPENDIX_TEMPLATE_NAME)
     if os.path.exists(appx_path):
         placeholders = extract_placeholders([appx_path])
 
     if artist_q:
         try:
-            tracks = rows_for_artist(artist_q)
+            tracks = rows_for_artist(artist_q).reset_index(drop=True)  # ВАЖНО
         except Exception as e:
             flash(f"Ошибка чтения Excel: {e}", "warning")
     return render_template("appendix.html", artist=artist_q, tracks=tracks, placeholders=placeholders)
@@ -329,12 +300,18 @@ def appendix():
 @app.route("/appendix/generate", methods=["POST"])
 def appendix_generate():
     artist_q = request.form.get("artist", "").strip()
-    sel_idx = request.form.getlist("sel")  # индексы выбранных строк
+    sel_idx = request.form.getlist("sel")
 
-    rows = rows_for_artist(artist_q)
-    if sel_idx:
+    rows = rows_for_artist(artist_q).reset_index(drop=True)  # ВАЖНО
+
+    # безопасно парсим индексы из чекбоксов
+    try:
         idxs = [int(i) for i in sel_idx]
-        rows = rows.reset_index(drop=True).iloc[idxs]
+        idxs = [i for i in idxs if 0 <= i < len(rows)]
+    except Exception:
+        idxs = []
+    if idxs:
+        rows = rows.iloc[idxs]
 
     appx_path = os.path.join(TEMPLATE_DIR, APPENDIX_TEMPLATE_NAME)
     if not os.path.exists(appx_path):
