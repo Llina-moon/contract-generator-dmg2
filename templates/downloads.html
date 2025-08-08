@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Скачивания · DMG{% endblock %}
+{% block content %}
+<section class="card">
+  <h1>Скачивания</h1>
+  {% if files %}
+    <ul class="files">
+      {% for f in files %}
+        <li>
+          <code>{{ f }}</code>
+          <a class="btn outline" href="{{ url_for('download_file', name=f) }}">Скачать</a>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="muted">Пока нет сгенерированных документов. Сначала создай их на странице Генератора.</p>
+  {% endif %}
+</section>
+{% endblock %}

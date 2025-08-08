@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Генератор договоров · DMG{% endblock %}
+{% block content %}
+<section class="card">
+  <h1>Онлайн-генератор договоров</h1>
+  <p class="muted">Шаблоны лежат в репозитории в папке <code>templates_docs/</code>. Отметь файлы, нажми «Показать поля», заполни значения и сгенерируй ZIP.</p>
+</section>
+
+<section class="card">
+  <h2>1) Выбери шаблоны</h2>
+  {% if templates %}
+    <form action="{{ url_for('placeholders') }}" method="get">
+      <div class="chips">
+        {% for f in templates %}
+          <label class="chip">
+            <input type="checkbox" name="t" value="{{ f }}" {% if f in selected %}checked{% endif %}>
+            <span>{{ f }}</span>
+          </label>
+        {% endfor %}
+      </div>
+      <button class="btn outline" type="submit">Показать поля</button>
+    </form>
+  {% else %}
+    <p class="muted">Пока нет .docx в <code>templates_docs/</code>.</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>2) Заполни значения</h2>
+  {% if placeholders %}
+  <form action="{{ url_for('generate') }}" method="post">
+    {% for s in selected %}
+      <input type="hidden" name="selected_templates" value="{{ s }}">
+    {% endfor %}
+    <div class="grid">
+      {% for ph in placeholders %}
+        <label class="field">
+          <span>{{ ph }}</span>
+          <input type="text" name="ph:{{ ph }}" placeholder="{{ ph }}">
+        </label>
+      {% endfor %}
+    </div>
+    <div class="actions">
+      <button class="btn solid" type="submit">Сгенерировать ZIP</button>
+      <a class="btn ghost" href="{{ url_for('downloads') }}">Перейти к скачиваниям</a>
+    </div>
+  </form>
+  {% else %}
+    <p class="muted">Выбери шаблоны выше и нажми «Показать поля».</p>
+  {% endif %}
+</section>
+{% endblock %}
