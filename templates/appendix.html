@@ -1,46 +1,56 @@
 {% extends "base.html" %}
-{% block title %}Приложение 1 · DMG{% endblock %}
+{% block title %}Приложение 1{% endblock %}
+
 {% block content %}
-<section class="card">
-  <h1>Приложение 1 (из Excel)</h1>
-  <form method="get" action="{{ url_for('appendix') }}">
-    <label class="field">
-      <span>Артист</span>
-      <input type="text" name="artist" value="{{ artist or '' }}" placeholder="Введите имя артиста как в Excel">
-    </label>
-    <div class="actions">
-      <button class="btn outline" type="submit">Показать треки</button>
+<h2>Генерация Приложения № 1</h2>
+
+<form method="get" action="{{ url_for('appendix') }}">
+    <div>
+        <label>Исполнитель:</label>
+        <input type="text" name="artist" value="{{ artist }}">
+        <button type="submit">Найти треки</button>
     </div>
-  </form>
-</section>
+</form>
 
 {% if tracks is not none %}
-<section class="card">
-  <h2>Найдено треков: {{ tracks.shape[0] }}</h2>
-  <form method="post" action="{{ url_for('appendix_generate') }}">
-    <input type="hidden" name="artist" value="{{ artist or '' }}">
-    <div class="field" style="margin:8px 0;">
-      <span>ФИО для имени файла</span>
-      <input type="text" name="fio" placeholder="Напр. Иванов Иван Иванович">
-    </div>
-    <p class="muted">Отметь треки, которые попадут в таблицу (по умолчанию — все):</p>
-    <ul class="files">
-      {% for i, row in tracks.reset_index(drop=True).iterrows() %}
-      <li>
-        <label style="display:flex; align-items:center; gap:8px;">
-          <input type="checkbox" name="sel" value="{{ i }}" checked>
-          <span>
-            <b>{{ row.get('track_name','') }}</b> · {{ row.get('artist_name','') }}
-            {% if row.get('isrc','') %} · ISRC: {{ row.get('isrc') }}{% endif %}
-          </span>
-        </label>
-      </li>
-      {% endfor %}
-    </ul>
-    <div class="actions">
-      <button class="btn solid" type="submit">Собрать «Приложение 1»</button>
-    </div>
-  </form>
-</section>
+    {% if tracks.empty %}
+        <p>Треки не найдены для "{{ artist }}".</p>
+    {% else %}
+        <form method="post" action="{{ url_for('appendix_generate') }}">
+            <input type="hidden" name="artist" value="{{ artist }}">
+
+            <h3>Выберите треки для включения:</h3>
+            <table border="1" cellpadding="4" cellspacing="0">
+                <thead>
+                    <tr>
+                        <th>Выбрать</th>
+                        {% for col in tracks.columns %}
+                            <th>{{ col }}</th>
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for i, row in tracks.iterrows() %}
+                        <tr>
+                            <td><input type="checkbox" name="sel" value="{{ i }}" checked></td>
+                            {% for col in tracks.columns %}
+                                <td>{{ row[col] }}</td>
+                            {% endfor %}
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+
+            <h3>Заполните плейсхолдеры:</h3>
+            {% for ph in placeholders %}
+                <div>
+                    <label>{{ ph }}:</label>
+                    <input type="text" name="ph:{{ ph }}">
+                </div>
+            {% endfor %}
+
+            <button type="submit">Скачать готовое приложение</button>
+        </form>
+    {% endif %}
 {% endif %}
 {% endblock %}
