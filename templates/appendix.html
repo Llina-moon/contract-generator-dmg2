@@ -17,41 +17,26 @@
 {% if tracks is not none %}
 <section class="card">
   <h2>Найдено треков: {{ tracks.shape[0] }}</h2>
-
   <form method="post" action="{{ url_for('appendix_generate') }}">
     <input type="hidden" name="artist" value="{{ artist or '' }}">
-
-    {% if placeholders %}
-      <div class="card" style="margin-top:12px;">
-        <h3>Данные для подстановки в текст</h3>
-        <div class="grid">
-          {% for ph in placeholders %}
-            <label class="field">
-              <span>{{ ph }}</span>
-              <input type="text" name="ph:{{ ph }}" placeholder="{{ ph }}">
-            </label>
-          {% endfor %}
-        </div>
-      </div>
-    {% endif %}
-
-    <p class="muted" style="margin-top:8px;">Выбери треки (по умолчанию — все):</p>
+    <div class="field" style="margin:8px 0;">
+      <span>ФИО для имени файла</span>
+      <input type="text" name="fio" placeholder="Напр. Иванов Иван Иванович">
+    </div>
+    <p class="muted">Отметь треки, которые попадут в таблицу (по умолчанию — все):</p>
     <ul class="files">
-      {# ВАЖНО: сбрасываем индекс, чтобы чекбоксы были 0..N-1 #}
       {% for i, row in tracks.reset_index(drop=True).iterrows() %}
-        <li>
-          <label style="display:flex; align-items:center; gap:8px;">
-            <input type="checkbox" name="sel" value="{{ i }}" checked>
-            <span>
-              <b>{{ row.get('track_name','') }}</b>
-              · {{ row.get('artist_name','') }}
-              {% if row.get('isrc','') %} · ISRC: {{ row.get('isrc') }}{% endif %}
-            </span>
-          </label>
-        </li>
+      <li>
+        <label style="display:flex; align-items:center; gap:8px;">
+          <input type="checkbox" name="sel" value="{{ i }}" checked>
+          <span>
+            <b>{{ row.get('track_name','') }}</b> · {{ row.get('artist_name','') }}
+            {% if row.get('isrc','') %} · ISRC: {{ row.get('isrc') }}{% endif %}
+          </span>
+        </label>
+      </li>
       {% endfor %}
     </ul>
-
     <div class="actions">
       <button class="btn solid" type="submit">Собрать «Приложение 1»</button>
     </div>

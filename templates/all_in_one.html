@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Мастер генерации · DMG{% endblock %}
+{% block content %}
+
+<section class="card">
+  <h1>Мастер генерации: Договор(ы) + Приложение 1</h1>
+  <p class="muted">Выбери, что нужно сгенерировать, заполни единые ключи, и, при необходимости, добавь треки в Приложение 1.</p>
+</section>
+
+<section class="card">
+  <h2>1) Что генерируем</h2>
+  <form method="get" action="{{ url_for('all_in_one') }}">
+    <div class="chips">
+      {% for f in templates %}
+        <label class="chip">
+          <input type="checkbox" name="t" value="{{ f }}" {% if f in selected %}checked{% endif %}>
+          <span>{{ f }}</span>
+        </label>
+      {% endfor %}
+    </div>
+
+    <label class="chip" style="margin-top:10px;">
+      <input type="checkbox" name="appendix" {% if appendix_on %}checked{% endif %}>
+      <span>Добавить Приложение 1</span>
+    </label>
+
+    {% if appendix_on %}
+      <div class="grid" style="margin-top:10px;">
+        <label class="field">
+          <span>Артист (как в Excel)</span>
+          <input type="text" name="artist" value="{{ artist or '' }}" placeholder="Введите имя артиста">
+        </label>
+      </div>
+    {% endif %}
+
+    <div class="actions">
+      <button class="btn outline" type="submit">Показать поля и треки</button>
+    </div>
+  </form>
+</section>
+
+<section class="card">
+  <h2>2) Единые ключи</h2>
+  {% if placeholders %}
+    <form method="post" action="{{ url_for('all_in_one_generate') }}">
+      {% for s in selected %}<input type="hidden" name="selected_templates" value="{{ s }}">{% endfor %}
+      <input type="hidden" name="appendix" value="{{ 'on' if appendix_on else '' }}">
+      <input type="hidden" name="artist" value="{{ artist or '' }}">
+
+      <div class="grid">
+        {% for ph in placeholders %}
+          <label class="field">
+            <span>{{ ph }}</span>
+            <input type="text" name="ph:{{ ph }}" placeholder="{{ ph }}">
+          </label>
+        {% endfor %}
+      </div>
+
+      {% if appendix_on %}
+        <div class="card" style="margin-top:12px;">
+          <h3>3) Треки для Приложения 1</h3>
+          {% if tracks is none %}
+            <p class="muted">Введите артиста выше и нажмите «Показать поля и треки».</p>
+          {% elif tracks.empty %}
+            <p class="muted">Треки не найдены для «{{ artist }}».</p>
+          {% else %}
+            <p class="muted">Отметь, какие треки включить (по умолчанию — все):</p>
+            <ul class="files">
+              {% for i, row in tracks.iterrows() %}
+                <li>
+                  <label style="display:flex; align-items:center; gap:8px;">
+                    <input type="checkbox" name="sel" value="{{ i }}" checked>
+                    <span>
+                      <b>{{ row.get('track_name','') }}</b> · {{ row.get('artist_name','') }}
+                      {% if row.get('isrc','') %} · ISRC: {{ row.get('isrc') }}{% endif %}
+                    </span>
+                  </label>
+                </li>
+              {% endfor %}
+            </ul>
+          {% endif %}
+        </div>
+      {% endif %}
+
+      <div class="actions" style="margin-top:12px;">
+        <button class="btn solid" type="submit">Скачать результат</button>
+        <a class="btn ghost" href="{{ url_for('downloads') }}">К скачиваниям</a>
+      </div>
+    </form>
+  {% else %}
+    <p class="muted">Выбери договоры и/или включи Приложение 1 выше и нажми «Показать поля и треки».</p>
+  {% endif %}
+</section>
+
+{% endblock %}
