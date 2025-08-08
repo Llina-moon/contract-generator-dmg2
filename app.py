@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, send_file, redirect, url_for, flash, abort
+from flask import Flask, render_template, request, send_file, redirect, url_for, flash, abort, jsonify
 from docx import Document
 from docx.shared import RGBColor
 from docx.table import Table
@@ -212,6 +212,35 @@ def fill_appendix_table(doc: Document, df: pd.DataFrame):
     for i, rec in enumerate(rows[1:], start=2):
         r = clone_row(table, template_row_idx)
         set_row_cells(r, map_record_to_values(i, rec))
+
+# ====== API: автокомплит артистов ======
+@app.route("/api/artists")
+def api_artists():
+    """Подсказки по артистам из Excel. До 20 шт.
+       Сначала STARTSWITH, затем CONTAINS; без дублей.
+    """
+    q = (request.args.get("q") or "").strip()
+    df = load_catalog()
+    if "artist_name" not in df.columns:
+        return jsonify([])
+
+    series = df["artist_name"].astype(str).str.strip()
+    if not q:
+        return jsonify([])
+
+    qn = re.sub(r"\s+", " ", q).lower()
+    s_lower = series.str.lower()
+
+    starts = series[s_lower.str.startswith(qn)].unique().tolist()
+    contains = series[s_lower.str.contains(re.escape(qn))].unique().tolist()
+
+    seen, out = set(), []
+    for name in starts + contains:
+        if name and name not in seen:
+            out.append(name)
+            seen.add(name)
+
+    return jsonify(out[:20])
 
 # ====== РОУТЫ: ЕДИНАЯ СТРАНИЦА ======
 @app.route("/", methods=["GET"])
