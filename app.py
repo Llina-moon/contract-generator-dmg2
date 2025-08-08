@@ -358,6 +358,126 @@ def not_found(e):
 @app.errorhandler(500)
 def server_error(e):
     return render_template("error.html", code=500, message="Внутренняя ошибка сервера"), 500
+    # ====== Мастер: договор(ы)+приложение на одной странице ======
+@app.route("/all-in-one", methods=["GET"])
+def all_in_one():
+    templates = list_templates()  # список .docx в templates_docs
+    selected = request.args.getlist("t")
+    selected = [s for s in selected if s in templates]
+
+    # флаг: включено ли приложение
+    appendix_on = request.args.get("appendix") == "on"
+    artist_q = request.args.get("artist", "").strip()
+
+    # соберём плейсхолдеры: из выбранных договоров + (опц.) из шаблона приложения
+    ph_paths = [os.path.join(TEMPLATE_DIR, f) for f in selected]
+    if appendix_on:
+        appx_path = os.path.join(TEMPLATE_DIR, APPENDIX_TEMPLATE_NAME)
+        if os.path.exists(appx_path):
+            ph_paths.append(appx_path)
+    placeholders = extract_placeholders(ph_paths) if ph_paths else []
+
+    # если включено приложение и введён артист — подтянем треки
+    tracks = None
+    if appendix_on and artist_q:
+        try:
+            tracks = rows_for_artist(artist_q).reset_index(drop=True)
+        except Exception as e:
+            flash(f"Ошибка чтения Excel: {e}", "warning")
+
+    return render_template(
+        "all_in_one.html",
+        templates=templates,
+        selected=selected,
+        appendix_on=appendix_on,
+        artist=artist_q,
+        tracks=tracks,
+        placeholders=placeholders
+    )
+
+@app.route("/all-in-one/generate", methods=["POST"])
+def all_in_one_generate():
+    templates = list_templates()
+    selected = request.form.getlist("selected_templates")
+    selected = [s for s in selected if s in templates]
+
+    appendix_on = request.form.get("appendix") == "on"
+    artist_q = (request.form.get("artist") or "").strip()
+
+    if not selected and not appendix_on:
+        flash("Выберите хотя бы один договор или включите Приложение 1.", "warning")
+        return redirect(url_for("all_in_one"))
+
+    # ЕДИНЫЕ плейсхолдеры
+    mapping = {k[3:]: v for k, v in request.form.items() if k.startswith("ph:")}
+    fio_value = (mapping.get("{ФИО}", "") or "").strip() or "БезФИО"
+    safe_fio = re.sub(r'[\\/*?:"<>|]', "", fio_value)
+
+    out_files = []
+
+    # 1) Генерация договоров (каждый выбранный шаблон)
+    for name in selected:
+        path = os.path.join(TEMPLATE_DIR, name)
+        doc = Document(path)
+        replace_in_doc(doc, mapping)
+
+        base = os.path.splitext(name)[0]
+        base_lower = base.lower()
+        if "договор" in base_lower:
+            kind = "договор"
+        elif "приложение" in base_lower:
+            kind = "приложение"
+        else:
+            parts = re.split(r"[\s_()-]+", base)
+            kind = (parts[-1] if parts and parts[-1] else base)
+
+        out_name = f"{safe_fio} {kind}.docx"
+        out_path = os.path.join(GENERATED_DIR, out_name)
+        doc.save(out_path)
+        out_files.append(out_path)
+
+    # 2) Генерация «Приложение 1» (если включено)
+    if appendix_on:
+        appx_path = os.path.join(TEMPLATE_DIR, APPENDIX_TEMPLATE_NAME)
+        if not os.path.exists(appx_path):
+            flash(f"Не найден шаблон приложения: {APPENDIX_TEMPLATE_NAME}", "warning")
+            return redirect(url_for("all_in_one"))
+
+        # какие треки выбраны
+        rows = rows_for_artist(artist_q).reset_index(drop=True) if artist_q else load_catalog().iloc[0:0]
+        sel_idx = request.form.getlist("sel")
+        try:
+            idxs = [int(i) for i in sel_idx]
+            idxs = [i for i in idxs if 0 <= i < len(rows)]
+        except Exception:
+            idxs = []
+        if idxs:
+            rows = rows.iloc[idxs]
+
+        doc = Document(appx_path)
+        # сначала плейсхолдеры по тексту приложения
+        replace_in_doc(doc, mapping)
+        # затем таблица с треками (нумерация, все колонки)
+        fill_appendix_table(doc, rows)
+
+        out_name = f"{safe_fio} приложение.docx"
+        out_path = os.path.join(GENERATED_DIR, out_name)
+        doc.save(out_path)
+        out_files.append(out_path)
+
+    # Отдаём один файл напрямую, или ZIP если файлов несколько
+    if len(out_files) == 1:
+        fp = out_files[0]
+        return send_file(fp, as_attachment=True, download_name=os.path.basename(fp))
+
+    mem = io.BytesIO()
+    with ZipFile(mem, "w") as z:
+        for fp in out_files:
+            z.write(fp, arcname=os.path.basename(fp))
+    mem.seek(0)
+    zip_name = f"{safe_fio}.zip"
+    return send_file(mem, as_attachment=True, download_name=zip_name)
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
