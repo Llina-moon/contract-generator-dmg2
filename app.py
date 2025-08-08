@@ -22,14 +22,13 @@ os.makedirs(GENERATED_DIR, exist_ok=True)
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-secret")
 
-# ====== ДОГОВОРА: бережная замена плейсхолдеров ======
+# ====== ДОКС: бережная замена плейсхолдеров ======
 PLACEHOLDER_RE = re.compile(r"\{[^{}]+\}")
 
 def list_templates():
     return sorted([f for f in os.listdir(TEMPLATE_DIR) if f.lower().endswith(ALLOWED_SUFFIX)])
 
 def extract_placeholders(docx_paths):
-    """Собираем уникальные плейсхолдеры из тела, таблиц и колонтитулов."""
     found = set()
     for path in docx_paths:
         doc = Document(path)
@@ -48,14 +47,11 @@ def extract_placeholders(docx_paths):
                             found.update(PLACEHOLDER_RE.findall(full))
         # колонтитулы
         for section in doc.sections:
-            for p in section.header.paragraphs:
-                full = "".join(run.text for run in p.runs) or p.text
-                if full:
-                    found.update(PLACEHOLDER_RE.findall(full))
-            for p in section.footer.paragraphs:
-                full = "".join(run.text for run in p.runs) or p.text
-                if full:
-                    found.update(PLACEHOLDER_RE.findall(full))
+            for area in (section.header, section.footer):
+                for p in area.paragraphs:
+                    full = "".join(run.text for run in p.runs) or p.text
+                    if full:
+                        found.update(PLACEHOLDER_RE.findall(full))
     return sorted(found)
 
 def replace_placeholders_preserve_runs(paragraph, mapping):
@@ -114,10 +110,9 @@ def replace_in_doc(doc, mapping):
                 for p in cell.paragraphs:
                     replace_placeholders_preserve_runs(p, mapping)
     for section in doc.sections:
-        for p in section.header.paragraphs:
-            replace_placeholders_preserve_runs(p, mapping)
-        for p in section.footer.paragraphs:
-            replace_placeholders_preserve_runs(p, mapping)
+        for area in (section.header, section.footer):
+            for p in area.paragraphs:
+                replace_placeholders_preserve_runs(p, mapping)
 
 # ====== EXCEL → ПРИЛОЖЕНИЕ 1 ======
 _catalog_df = None
@@ -166,7 +161,7 @@ def set_row_cells(row, values):
 def clone_row(table: Table, template_idx: int):
     """Клонируем строку таблицы (переносим стиль первого параграфа)."""
     new = table.add_row()
-    for i, cell in enumerate(table.rows[template_idx].cells):
+    for i, cell in enumerate(table.rows[template_row_idx].cells):
         if i < len(new.cells):
             if cell.paragraphs and new.cells[i].paragraphs:
                 new.cells[i].paragraphs[0].style = cell.paragraphs[0].style
@@ -203,6 +198,7 @@ def fill_appendix_table(doc: Document, df: pd.DataFrame):
     """Заполняем таблицу Приложения 1, нумеруем строки с 1, расширяем на любое кол-во треков."""
     table = get_appendix_table(doc)
     # Часто: 1-я строка — заголовки, 2-я — строка-образец
+    global template_row_idx
     template_row_idx = 1 if len(table.rows) > 1 else 0
 
     rows = df.to_dict(orient="records")
@@ -217,126 +213,14 @@ def fill_appendix_table(doc: Document, df: pd.DataFrame):
         r = clone_row(table, template_row_idx)
         set_row_cells(r, map_record_to_values(i, rec))
 
-# ====== РОУТЫ: главная (старый генератор договоров) ======
-@app.route("/")
-def index():
-    templates = list_templates()
-    selected = request.args.getlist("t")
-    selected = [s for s in selected if s in templates]
-    placeholders = extract_placeholders([os.path.join(TEMPLATE_DIR, f) for f in selected]) if selected else []
-    return render_template("index.html", templates=templates, selected=selected, placeholders=placeholders)
-
-@app.route("/placeholders")
-def placeholders():
-    templates = list_templates()
-    selected = request.args.getlist("t")
-    selected = [s for s in selected if s in templates]
-    placeholders = extract_placeholders([os.path.join(TEMPLATE_DIR, f) for f in selected]) if selected else []
-    return render_template("index.html", templates=templates, selected=selected, placeholders=placeholders)
-
-@app.route("/generate", methods=["POST"])
-def generate():
-    templates = list_templates()
-    selected = request.form.getlist("selected_templates")
-    selected = [s for s in selected if s in templates]
-    if not selected:
-        flash("Выберите хотя бы один шаблон.", "warning")
-        return redirect(url_for("index"))
-
-    mapping = {k[3:]: v for k, v in request.form.items() if k.startswith("ph:")}
-    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    out_files = []
-
-    # Имя по {ФИО}
-    fio_value = (mapping.get("{ФИО}", "") or "").strip() or "БезФИО"
-    safe_fio = re.sub(r'[\\/*?:"<>|]', "", fio_value)
-
-    for name in selected:
-        path = os.path.join(TEMPLATE_DIR, name)
-        doc = Document(path)
-        replace_in_doc(doc, mapping)
-
-        base = os.path.splitext(name)[0]
-        base_lower = base.lower()
-        if "договор" in base_lower:
-            kind = "договор"
-        elif "приложение" in base_lower:
-            kind = "приложение"
-        else:
-            parts = re.split(r"[\s_()-]+", base)
-            kind = (parts[-1] if parts and parts[-1] else base)
-
-        out_name = f"{safe_fio} {kind}.docx"
-        out_path = os.path.join(GENERATED_DIR, out_name)
-        doc.save(out_path)
-        out_files.append(out_path)
-
-    mem = io.BytesIO()
-    with ZipFile(mem, "w") as z:
-        for fp in out_files:
-            z.write(fp, arcname=os.path.basename(fp))
-    mem.seek(0)
-    zip_name = f"{safe_fio}.zip" if safe_fio else f"contracts_{stamp}.zip"
-    return send_file(mem, as_attachment=True, download_name=zip_name)
-
-# ====== РОУТЫ: Приложение 1 (старые отдельные страницы — можно удалить позже) ======
-@app.route("/appendix", methods=["GET"])
-def appendix():
-    artist_q = request.args.get("artist", "").strip()
-    tracks = None
-    placeholders = []
-    appx_path = os.path.join(TEMPLATE_DIR, APPENDIX_TEMPLATE_NAME)
-    if os.path.exists(appx_path):
-        placeholders = extract_placeholders([appx_path])
-
-    if artist_q:
-        try:
-            tracks = rows_for_artist(artist_q).reset_index(drop=True)
-        except Exception as e:
-            flash(f"Ошибка чтения Excel: {e}", "warning")
-    return render_template("appendix.html", artist=artist_q, tracks=tracks, placeholders=placeholders)
-
-@app.route("/appendix/generate", methods=["POST"])
-def appendix_generate():
-    artist_q = request.form.get("artist", "").strip()
-    sel_idx = request.form.getlist("sel")
-
-    rows = rows_for_artist(artist_q).reset_index(drop=True)
-    try:
-        idxs = [int(i) for i in sel_idx]
-        idxs = [i for i in idxs if 0 <= i < len(rows)]
-    except Exception:
-        idxs = []
-    if idxs:
-        rows = rows.iloc[idxs]
-
-    appx_path = os.path.join(TEMPLATE_DIR, APPENDIX_TEMPLATE_NAME)
-    if not os.path.exists(appx_path):
-        flash(f"Не найден шаблон приложения: {APPENDIX_TEMPLATE_NAME}", "warning")
-        return redirect(url_for("appendix", artist=artist_q))
-
-    mapping = {k[3:]: v for k, v in request.form.items() if k.startswith("ph:")}
-
-    doc = Document(appx_path)
-    replace_in_doc(doc, mapping)
-    fill_appendix_table(doc, rows)
-
-    fio_value = (mapping.get("{ФИО}", "") or "").strip() or "БезФИО"
-    safe_fio = re.sub(r'[\\/*?:"<>|]', "", fio_value)
-    out_name = f"{safe_fio} приложение.docx"
-    out_path = os.path.join(GENERATED_DIR, out_name)
-    doc.save(out_path)
-
-    return send_file(out_path, as_attachment=True, download_name=out_name)
-
-# ====== РОУТЫ: Мастер (всё на одной странице) ======
-@app.route("/all-in-one", methods=["GET"])
+# ====== РОУТЫ: ЕДИНАЯ СТРАНИЦА ======
+@app.route("/", methods=["GET"])
 def all_in_one():
     # список шаблонов БЕЗ файла приложения
     all_tmpls = list_templates()
     templates = [t for t in all_tmpls if t != APPENDIX_TEMPLATE_NAME]
 
-    # используем request.values, чтобы не сбивать введённые значения
+    # используем request.values, чтобы не сбивать введённые значения при обновлении
     vals = request.values
 
     selected = vals.getlist("t")
@@ -372,7 +256,7 @@ def all_in_one():
         values=vals,  # чтобы предзаполнять инпуты
     )
 
-@app.route("/all-in-one/generate", methods=["POST"])
+@app.route("/generate", methods=["POST"])
 def all_in_one_generate():
     # какие договоры выбраны
     templates = list_templates()
@@ -452,7 +336,7 @@ def all_in_one_generate():
     mem.seek(0)
     return send_file(mem, as_attachment=True, download_name=f"{safe_fio}.zip")
 
-# ====== ПРОЧЕЕ ======
+# ====== СКАЧИВАНИЯ ======
 @app.route("/downloads")
 def downloads():
     files = sorted([f for f in os.listdir(GENERATED_DIR) if f.lower().endswith(".docx")], reverse=True)
@@ -467,6 +351,7 @@ def download_file(name):
         abort(404)
     return send_file(path, as_attachment=True, download_name=name)
 
+# ====== ОШИБКИ ======
 @app.errorhandler(404)
 def not_found(e):
     return render_template("error.html", code=404, message="Страница не найдена"), 404
