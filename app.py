@@ -395,25 +395,49 @@ def all_in_one():
         placeholders=placeholders
     )
 
-@app.route("/all-in-one/generate", methods=["POST"])
-def all_in_one_generate():
-    templates = list_templates()
-    selected = request.form.getlist("selected_templates")
+@app.route("/all-in-one", methods=["GET"])
+def all_in_one():
+    # 1) список шаблонов БЕЗ файла приложения
+    all_tmpls = list_templates()
+    templates = [t for t in all_tmpls if t != APPENDIX_TEMPLATE_NAME]
+
+    # 2) используем request.values (combo GET+POST) -> позволяет сохранять введённые значения
+    vals = request.values
+
+    selected = vals.getlist("t")
     selected = [s for s in selected if s in templates]
 
-    appendix_on = request.form.get("appendix") == "on"
-    artist_q = (request.form.get("artist") or "").strip()
+    appendix_on = vals.get("appendix") == "on"
+    artist_q = (vals.get("artist") or "").strip()
 
-    if not selected and not appendix_on:
-        flash("Выберите хотя бы один договор или включите Приложение 1.", "warning")
-        return redirect(url_for("all_in_one"))
+    # 3) собираем плейсхолдеры: выбранные договоры + (опц.) приложение
+    ph_paths = [os.path.join(TEMPLATE_DIR, f) for f in selected]
+    if appendix_on:
+        appx_path = os.path.join(TEMPLATE_DIR, APPENDIX_TEMPLATE_NAME)
+        if os.path.exists(appx_path):
+            ph_paths.append(appx_path)
+    placeholders = extract_placeholders(ph_paths) if ph_paths else []
 
-    # ЕДИНЫЕ плейсхолдеры
-    mapping = {k[3:]: v for k, v in request.form.items() if k.startswith("ph:")}
-    fio_value = (mapping.get("{ФИО}", "") or "").strip() or "БезФИО"
-    safe_fio = re.sub(r'[\\/*?:"<>|]', "", fio_value)
+    # 4) если приложение включено, подтянем треки
+    tracks = None
+    if appendix_on and artist_q:
+        try:
+            tracks = rows_for_artist(artist_q).reset_index(drop=True)
+        except Exception as e:
+            flash(f"Ошибка чтения Excel: {e}", "warning")
 
-    out_files = []
+    # 5) передаём в шаблон текущие значения (для предзаполнения)
+    return render_template(
+        "all_in_one.html",
+        templates=templates,
+        selected=selected,
+        appendix_on=appendix_on,
+        artist=artist_q,
+        tracks=tracks,
+        placeholders=placeholders,
+        values=vals  # <— тут все текущие введённые поля, включая ph:...
+    )
+
 
     # 1) Генерация договоров (каждый выбранный шаблон)
     for name in selected:
