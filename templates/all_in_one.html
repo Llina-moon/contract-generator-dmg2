@@ -30,7 +30,7 @@
 
     {% if appendix_on %}
       <div class="grid" style="margin-top:10px;">
-        <label class="field" style="position:relative;">
+        <label class="field">
           <span>Артист (как в Excel)</span>
           <input type="text" name="artist" id="artist-input" value="{{ artist or '' }}" autocomplete="off" placeholder="Введите имя артиста">
           <div id="artist-suggest" class="autocomplete-list" hidden></div>
@@ -73,14 +73,25 @@
 
       {% if appendix_on %}
         <div class="card" style="margin-top:12px;">
-          <h3>3) Треки для Приложения 1</h3>
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
+            <h3 style="margin:0;">
+              3) Треки для Приложения 1
+              {% if tracks is not none %}
+                <span class="muted">· выбрано <span id="sel-count">0</span> из <span id="total-count">0</span></span>
+              {% endif %}
+            </h3>
+            {% if tracks is not none and not tracks.empty %}
+              <button type="button" id="toggle-all" class="btn ghost">Выбрать все</button>
+            {% endif %}
+          </div>
+
           {% if tracks is none %}
-            <p class="muted">Введите артиста выше и нажмите «Показать поля и треки».</p>
+            <p class="muted" style="margin-top:8px;">Введите артиста выше и нажмите «Показать поля и треки».</p>
           {% elif tracks.empty %}
-            <p class="muted">Треки не найдены для «{{ artist }}».</p>
+            <p class="muted" style="margin-top:8px;">Треки не найдены для «{{ artist }}».</p>
           {% else %}
-            <p class="muted">Отметьте треки для включения (по умолчанию — все):</p>
-            <ul class="files">
+            <p class="muted" style="margin-top:6px;">Отметьте треки для включения:</p>
+            <ul class="files" id="tracks-list">
               {% for i, row in tracks.iterrows() %}
                 <li>
                   <label style="display:flex; align-items:center; gap:8px;">
@@ -107,67 +118,106 @@
   {% endif %}
 </section>
 
-<!-- ===== Autocomplete script ===== -->
+<!-- ===== Autocomplete + Track counters ===== -->
 <script>
 (function(){
+  // ===== Autocomplete =====
   const input = document.getElementById('artist-input');
   const list  = document.getElementById('artist-suggest');
-  if(!input || !list) return;
+  if(input && list){
+    let timer = null;
+    let lastQuery = "";
 
-  let timer = null;
-  let lastQuery = "";
+    function clearList(){
+      list.innerHTML = "";
+      list.hidden = true;
+    }
 
-  function clearList(){
-    list.innerHTML = "";
-    list.hidden = true;
-  }
-
-  function render(items){
-    if(!items || !items.length){ clearList(); return; }
-    list.innerHTML = "";
-    items.forEach((name) => {
-      const li = document.createElement('div');
-      li.className = 'autocomplete-item';
-      li.textContent = name;
-      li.tabIndex = 0;
-      li.addEventListener('mousedown', (e) => {
-        e.preventDefault();
-        input.value = name;
-        clearList();
+    function render(items){
+      if(!items || !items.length){ clearList(); return; }
+      list.innerHTML = "";
+      items.forEach((name) => {
+        const li = document.createElement('div');
+        li.className = 'autocomplete-item';
+        li.textContent = name;
+        li.tabIndex = 0;
+        li.addEventListener('mousedown', (e) => {
+          e.preventDefault();
+          input.value = name;
+          clearList();
+        });
+        list.appendChild(li);
       });
-      list.appendChild(li);
+      list.hidden = false;
+    }
+
+    async function fetchSuggest(q){
+      try{
+        const resp = await fetch(`/api/artists?q=${encodeURIComponent(q)}`);
+        if(!resp.ok) return clearList();
+        const data = await resp.json();
+        if(q === lastQuery) render(data);
+      }catch(e){
+        clearList();
+      }
+    }
+
+    input.addEventListener('input', () => {
+      const q = input.value.trim();
+      lastQuery = q;
+      if(timer) clearTimeout(timer);
+      if(q.length < 1){ clearList(); return; }
+      timer = setTimeout(() => fetchSuggest(q), 200);
     });
-    list.hidden = false;
+
+    document.addEventListener('click', (e) => {
+      if(!list.contains(e.target) && e.target !== input){
+        clearList();
+      }
+    });
+    input.addEventListener('keydown', (e) => { if(e.key === 'Escape'){ clearList(); } });
   }
 
-  async function fetchSuggest(q){
-    try{
-      const resp = await fetch(`/api/artists?q=${encodeURIComponent(q)}`);
-      if(!resp.ok) return clearList();
-      const data = await resp.json();
-      if(q === lastQuery) render(data);
-    }catch(e){
-      clearList();
+  // ===== Track counters + toggle all =====
+  const tracksList = document.getElementById('tracks-list');
+  const selCountEl = document.getElementById('sel-count');
+  const totalCountEl = document.getElementById('total-count');
+  const toggleAllBtn = document.getElementById('toggle-all');
+
+  function updateCounts(){
+    if(!tracksList || !selCountEl || !totalCountEl) return;
+    const boxes = tracksList.querySelectorAll('input[type="checkbox"][name="sel"]');
+    const total = boxes.length;
+    let selected = 0;
+    boxes.forEach(b => { if(b.checked) selected++; });
+    selCountEl.textContent = selected;
+    totalCountEl.textContent = total;
+
+    if(toggleAllBtn){
+      if(selected === total){ toggleAllBtn.textContent = 'Снять все'; }
+      else { toggleAllBtn.textContent = 'Выбрать все'; }
     }
   }
 
-  input.addEventListener('input', () => {
-    const q = input.value.trim();
-    lastQuery = q;
-    if(timer) clearTimeout(timer);
-    if(q.length < 1){ clearList(); return; }
-    timer = setTimeout(() => fetchSuggest(q), 200);
-  });
+  if(tracksList){
+    tracksList.addEventListener('change', (e) => {
+      if(e.target && e.target.matches('input[type="checkbox"][name="sel"]')){
+        updateCounts();
+      }
+    });
+    // первичный подсчёт
+    updateCounts();
+  }
 
-  // Закрытие по клику вне и по Esc
-  document.addEventListener('click', (e) => {
-    if(!list.contains(e.target) && e.target !== input){
-      clearList();
-    }
-  });
-  input.addEventListener('keydown', (e) => {
-    if(e.key === 'Escape'){ clearList(); }
-  });
+  if(toggleAllBtn && tracksList){
+    toggleAllBtn.addEventListener('click', () => {
+      const boxes = tracksList.querySelectorAll('input[type="checkbox"][name="sel"]');
+      // если все выбраны — снимаем; иначе выбираем все
+      const allSelected = Array.from(boxes).every(b => b.checked);
+      boxes.forEach(b => { b.checked = !allSelected; });
+      updateCounts();
+    });
+  }
 })();
 </script>
 
