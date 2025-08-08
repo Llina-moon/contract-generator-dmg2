@@ -59,10 +59,7 @@ def extract_placeholders(docx_paths):
     return sorted(found)
 
 def replace_placeholders_preserve_runs(paragraph, mapping):
-    """
-    Бережная замена: сохраняем исходные runs (шрифты/размеры/стили).
-    Меняем ТОЛЬКО текст плейсхолдера на value и красим его в чёрный.
-    """
+    """Сохраняем стили/размеры: меняем только текст плейсхолдера и красим вставку в чёрный."""
     if not paragraph.runs:
         return
     run_texts = [r.text or "" for r in paragraph.runs]
@@ -72,15 +69,18 @@ def replace_placeholders_preserve_runs(paragraph, mapping):
     matches = list(PLACEHOLDER_RE.finditer(full))
     if not matches:
         return
+
     lengths = [len(t) for t in run_texts]
     cumul, s = [], 0
     for L in lengths:
         cumul.append(s); s += L
+
     def locate(pos: int):
         i = 0
         while i + 1 < len(cumul) and cumul[i + 1] <= pos:
             i += 1
         return i, pos - cumul[i]
+
     for m in reversed(matches):
         ph_text = m.group(0)
         if ph_text not in mapping:
@@ -88,6 +88,7 @@ def replace_placeholders_preserve_runs(paragraph, mapping):
         value = mapping[ph_text]
         si, so = locate(m.start())
         ei, eo = locate(m.end() - 1)
+
         if si == ei:
             r = paragraph.runs[si]
             t = r.text or ""
@@ -147,7 +148,7 @@ def rows_for_artist(artist_name: str):
     return rows
 
 def get_appendix_table(doc: Document) -> Table:
-    """Берём первую таблицу в шаблоне приложения (если другая — скажи, сделаем поиск по маркеру)."""
+    """Берём первую таблицу в шаблоне приложения (если нужна другая — сделаем поиск по маркеру)."""
     if not doc.tables:
         raise RuntimeError("В шаблоне приложения нет таблиц.")
     return doc.tables[0]
@@ -165,7 +166,7 @@ def set_row_cells(row, values):
 def clone_row(table: Table, template_idx: int):
     """Клонируем строку таблицы (переносим стиль первого параграфа)."""
     new = table.add_row()
-    for i, cell in enumerate(table.rows[template_row_idx].cells):
+    for i, cell in enumerate(table.rows[template_idx].cells):
         if i < len(new.cells):
             if cell.paragraphs and new.cells[i].paragraphs:
                 new.cells[i].paragraphs[0].style = cell.paragraphs[0].style
@@ -202,7 +203,6 @@ def fill_appendix_table(doc: Document, df: pd.DataFrame):
     """Заполняем таблицу Приложения 1, нумеруем строки с 1, расширяем на любое кол-во треков."""
     table = get_appendix_table(doc)
     # Часто: 1-я строка — заголовки, 2-я — строка-образец
-    global template_row_idx
     template_row_idx = 1 if len(table.rows) > 1 else 0
 
     rows = df.to_dict(orient="records")
@@ -217,7 +217,7 @@ def fill_appendix_table(doc: Document, df: pd.DataFrame):
         r = clone_row(table, template_row_idx)
         set_row_cells(r, map_record_to_values(i, rec))
 
-# ====== РОУТЫ: главная (договоры) ======
+# ====== РОУТЫ: главная (старый генератор договоров) ======
 @app.route("/")
 def index():
     templates = list_templates()
@@ -279,20 +279,19 @@ def generate():
     zip_name = f"{safe_fio}.zip" if safe_fio else f"contracts_{stamp}.zip"
     return send_file(mem, as_attachment=True, download_name=zip_name)
 
-# ====== РОУТЫ: Приложение 1 ======
+# ====== РОУТЫ: Приложение 1 (старые отдельные страницы — можно удалить позже) ======
 @app.route("/appendix", methods=["GET"])
 def appendix():
     artist_q = request.args.get("artist", "").strip()
     tracks = None
     placeholders = []
-    # плейсхолдеры из шаблона приложения
     appx_path = os.path.join(TEMPLATE_DIR, APPENDIX_TEMPLATE_NAME)
     if os.path.exists(appx_path):
         placeholders = extract_placeholders([appx_path])
 
     if artist_q:
         try:
-            tracks = rows_for_artist(artist_q).reset_index(drop=True)  # ВАЖНО
+            tracks = rows_for_artist(artist_q).reset_index(drop=True)
         except Exception as e:
             flash(f"Ошибка чтения Excel: {e}", "warning")
     return render_template("appendix.html", artist=artist_q, tracks=tracks, placeholders=placeholders)
@@ -302,9 +301,7 @@ def appendix_generate():
     artist_q = request.form.get("artist", "").strip()
     sel_idx = request.form.getlist("sel")
 
-    rows = rows_for_artist(artist_q).reset_index(drop=True)  # ВАЖНО
-
-    # безопасно парсим индексы из чекбоксов
+    rows = rows_for_artist(artist_q).reset_index(drop=True)
     try:
         idxs = [int(i) for i in sel_idx]
         idxs = [i for i in idxs if 0 <= i < len(rows)]
@@ -318,16 +315,12 @@ def appendix_generate():
         flash(f"Не найден шаблон приложения: {APPENDIX_TEMPLATE_NAME}", "warning")
         return redirect(url_for("appendix", artist=artist_q))
 
-    # собираем значения для плейсхолдеров из формы (поля вида name="ph:{...}")
     mapping = {k[3:]: v for k, v in request.form.items() if k.startswith("ph:")}
 
     doc = Document(appx_path)
-    # сначала подставим плейсхолдеры в тексте
     replace_in_doc(doc, mapping)
-    # затем заполним таблицу треками
     fill_appendix_table(doc, rows)
 
-    # имя файла по ФИО (если передали)
     fio_value = (mapping.get("{ФИО}", "") or "").strip() or "БезФИО"
     safe_fio = re.sub(r'[\\/*?:"<>|]', "", fio_value)
     out_name = f"{safe_fio} приложение.docx"
@@ -335,6 +328,129 @@ def appendix_generate():
     doc.save(out_path)
 
     return send_file(out_path, as_attachment=True, download_name=out_name)
+
+# ====== РОУТЫ: Мастер (всё на одной странице) ======
+@app.route("/all-in-one", methods=["GET"])
+def all_in_one():
+    # список шаблонов БЕЗ файла приложения
+    all_tmpls = list_templates()
+    templates = [t for t in all_tmpls if t != APPENDIX_TEMPLATE_NAME]
+
+    # используем request.values, чтобы не сбивать введённые значения
+    vals = request.values
+
+    selected = vals.getlist("t")
+    selected = [s for s in selected if s in templates]
+
+    appendix_on = vals.get("appendix") == "on"
+    artist_q = (vals.get("artist") or "").strip()
+
+    # плейсхолдеры из выбранных договоров + (опц.) из шаблона приложения
+    ph_paths = [os.path.join(TEMPLATE_DIR, f) for f in selected]
+    if appendix_on:
+        appx_path = os.path.join(TEMPLATE_DIR, APPENDIX_TEMPLATE_NAME)
+        if os.path.exists(appx_path):
+            ph_paths.append(appx_path)
+    placeholders = extract_placeholders(ph_paths) if ph_paths else []
+
+    # треки для приложения
+    tracks = None
+    if appendix_on and artist_q:
+        try:
+            tracks = rows_for_artist(artist_q).reset_index(drop=True)
+        except Exception as e:
+            flash(f"Ошибка чтения Excel: {e}", "warning")
+
+    return render_template(
+        "all_in_one.html",
+        templates=templates,
+        selected=selected,
+        appendix_on=appendix_on,
+        artist=artist_q,
+        tracks=tracks,
+        placeholders=placeholders,
+        values=vals,  # чтобы предзаполнять инпуты
+    )
+
+@app.route("/all-in-one/generate", methods=["POST"])
+def all_in_one_generate():
+    # какие договоры выбраны
+    templates = list_templates()
+    selected = request.form.getlist("selected_templates")
+    selected = [s for s in selected if s in templates and s != APPENDIX_TEMPLATE_NAME]
+
+    appendix_on = request.form.get("appendix") == "on"
+    artist_q = (request.form.get("artist") or "").strip()
+
+    if not selected and not appendix_on:
+        flash("Выберите хотя бы один договор или включите Приложение 1.", "warning")
+        return redirect(url_for("all_in_one"))
+
+    # единые плейсхолдеры
+    mapping = {k[3:]: v for k, v in request.form.items() if k.startswith("ph:")}
+    fio_value = (mapping.get("{ФИО}", "") or "").strip() or "БезФИО"
+    safe_fio = re.sub(r'[\\/*?:"<>|]', "", fio_value)
+
+    out_files = []
+
+    # 1) Генерация договоров
+    for name in selected:
+        path = os.path.join(TEMPLATE_DIR, name)
+        doc = Document(path)
+        replace_in_doc(doc, mapping)
+
+        base = os.path.splitext(name)[0]
+        base_lower = base.lower()
+        if "договор" in base_lower:
+            kind = "договор"
+        elif "приложение" in base_lower:
+            kind = "приложение"
+        else:
+            parts = re.split(r"[\s_()-]+", base)
+            kind = (parts[-1] if parts and parts[-1] else base)
+
+        out_name = f"{safe_fio} {kind}.docx"
+        out_path = os.path.join(GENERATED_DIR, out_name)
+        doc.save(out_path)
+        out_files.append(out_path)
+
+    # 2) Генерация Приложения 1 (если включено)
+    if appendix_on:
+        appx_path = os.path.join(TEMPLATE_DIR, APPENDIX_TEMPLATE_NAME)
+        if not os.path.exists(appx_path):
+            flash(f"Не найден шаблон приложения: {APPENDIX_TEMPLATE_NAME}", "warning")
+            return redirect(url_for("all_in_one"))
+
+        rows = rows_for_artist(artist_q).reset_index(drop=True) if artist_q else load_catalog().iloc[0:0]
+        sel_idx = request.form.getlist("sel")
+        try:
+            idxs = [int(i) for i in sel_idx]
+            idxs = [i for i in idxs if 0 <= i < len(rows)]
+        except Exception:
+            idxs = []
+        if idxs:
+            rows = rows.iloc[idxs]
+
+        doc = Document(appx_path)
+        replace_in_doc(doc, mapping)          # плейсхолдеры в тексте
+        fill_appendix_table(doc, rows)        # таблица с треками
+
+        out_name = f"{safe_fio} приложение.docx"
+        out_path = os.path.join(GENERATED_DIR, out_name)
+        doc.save(out_path)
+        out_files.append(out_path)
+
+    # один файл — отдать напрямую; несколько — ZIP
+    if len(out_files) == 1:
+        fp = out_files[0]
+        return send_file(fp, as_attachment=True, download_name=os.path.basename(fp))
+
+    mem = io.BytesIO()
+    with ZipFile(mem, "w") as z:
+        for fp in out_files:
+            z.write(fp, arcname=os.path.basename(fp))
+    mem.seek(0)
+    return send_file(mem, as_attachment=True, download_name=f"{safe_fio}.zip")
 
 # ====== ПРОЧЕЕ ======
 @app.route("/downloads")
@@ -358,150 +474,6 @@ def not_found(e):
 @app.errorhandler(500)
 def server_error(e):
     return render_template("error.html", code=500, message="Внутренняя ошибка сервера"), 500
-    # ====== Мастер: договор(ы)+приложение на одной странице ======
-@app.route("/all-in-one", methods=["GET"])
-def all_in_one():
-    templates = list_templates()  # список .docx в templates_docs
-    selected = request.args.getlist("t")
-    selected = [s for s in selected if s in templates]
-
-    # флаг: включено ли приложение
-    appendix_on = request.args.get("appendix") == "on"
-    artist_q = request.args.get("artist", "").strip()
-
-    # соберём плейсхолдеры: из выбранных договоров + (опц.) из шаблона приложения
-    ph_paths = [os.path.join(TEMPLATE_DIR, f) for f in selected]
-    if appendix_on:
-        appx_path = os.path.join(TEMPLATE_DIR, APPENDIX_TEMPLATE_NAME)
-        if os.path.exists(appx_path):
-            ph_paths.append(appx_path)
-    placeholders = extract_placeholders(ph_paths) if ph_paths else []
-
-    # если включено приложение и введён артист — подтянем треки
-    tracks = None
-    if appendix_on and artist_q:
-        try:
-            tracks = rows_for_artist(artist_q).reset_index(drop=True)
-        except Exception as e:
-            flash(f"Ошибка чтения Excel: {e}", "warning")
-
-    return render_template(
-        "all_in_one.html",
-        templates=templates,
-        selected=selected,
-        appendix_on=appendix_on,
-        artist=artist_q,
-        tracks=tracks,
-        placeholders=placeholders
-    )
-
-@app.route("/all-in-one", methods=["GET"])
-def all_in_one():
-    # 1) список шаблонов БЕЗ файла приложения
-    all_tmpls = list_templates()
-    templates = [t for t in all_tmpls if t != APPENDIX_TEMPLATE_NAME]
-
-    # 2) используем request.values (combo GET+POST) -> позволяет сохранять введённые значения
-    vals = request.values
-
-    selected = vals.getlist("t")
-    selected = [s for s in selected if s in templates]
-
-    appendix_on = vals.get("appendix") == "on"
-    artist_q = (vals.get("artist") or "").strip()
-
-    # 3) собираем плейсхолдеры: выбранные договоры + (опц.) приложение
-    ph_paths = [os.path.join(TEMPLATE_DIR, f) for f in selected]
-    if appendix_on:
-        appx_path = os.path.join(TEMPLATE_DIR, APPENDIX_TEMPLATE_NAME)
-        if os.path.exists(appx_path):
-            ph_paths.append(appx_path)
-    placeholders = extract_placeholders(ph_paths) if ph_paths else []
-
-    # 4) если приложение включено, подтянем треки
-    tracks = None
-    if appendix_on and artist_q:
-        try:
-            tracks = rows_for_artist(artist_q).reset_index(drop=True)
-        except Exception as e:
-            flash(f"Ошибка чтения Excel: {e}", "warning")
-
-    # 5) передаём в шаблон текущие значения (для предзаполнения)
-    return render_template(
-        "all_in_one.html",
-        templates=templates,
-        selected=selected,
-        appendix_on=appendix_on,
-        artist=artist_q,
-        tracks=tracks,
-        placeholders=placeholders,
-        values=vals  # <— тут все текущие введённые поля, включая ph:...
-    )
-
-
-    # 1) Генерация договоров (каждый выбранный шаблон)
-    for name in selected:
-        path = os.path.join(TEMPLATE_DIR, name)
-        doc = Document(path)
-        replace_in_doc(doc, mapping)
-
-        base = os.path.splitext(name)[0]
-        base_lower = base.lower()
-        if "договор" in base_lower:
-            kind = "договор"
-        elif "приложение" in base_lower:
-            kind = "приложение"
-        else:
-            parts = re.split(r"[\s_()-]+", base)
-            kind = (parts[-1] if parts and parts[-1] else base)
-
-        out_name = f"{safe_fio} {kind}.docx"
-        out_path = os.path.join(GENERATED_DIR, out_name)
-        doc.save(out_path)
-        out_files.append(out_path)
-
-    # 2) Генерация «Приложение 1» (если включено)
-    if appendix_on:
-        appx_path = os.path.join(TEMPLATE_DIR, APPENDIX_TEMPLATE_NAME)
-        if not os.path.exists(appx_path):
-            flash(f"Не найден шаблон приложения: {APPENDIX_TEMPLATE_NAME}", "warning")
-            return redirect(url_for("all_in_one"))
-
-        # какие треки выбраны
-        rows = rows_for_artist(artist_q).reset_index(drop=True) if artist_q else load_catalog().iloc[0:0]
-        sel_idx = request.form.getlist("sel")
-        try:
-            idxs = [int(i) for i in sel_idx]
-            idxs = [i for i in idxs if 0 <= i < len(rows)]
-        except Exception:
-            idxs = []
-        if idxs:
-            rows = rows.iloc[idxs]
-
-        doc = Document(appx_path)
-        # сначала плейсхолдеры по тексту приложения
-        replace_in_doc(doc, mapping)
-        # затем таблица с треками (нумерация, все колонки)
-        fill_appendix_table(doc, rows)
-
-        out_name = f"{safe_fio} приложение.docx"
-        out_path = os.path.join(GENERATED_DIR, out_name)
-        doc.save(out_path)
-        out_files.append(out_path)
-
-    # Отдаём один файл напрямую, или ZIP если файлов несколько
-    if len(out_files) == 1:
-        fp = out_files[0]
-        return send_file(fp, as_attachment=True, download_name=os.path.basename(fp))
-
-    mem = io.BytesIO()
-    with ZipFile(mem, "w") as z:
-        for fp in out_files:
-            z.write(fp, arcname=os.path.basename(fp))
-    mem.seek(0)
-    zip_name = f"{safe_fio}.zip"
-    return send_file(mem, as_attachment=True, download_name=zip_name)
-
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
