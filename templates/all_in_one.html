@@ -1,17 +1,18 @@
 {% extends "base.html" %}
-{% block title %}Мастер генерации · DMG{% endblock %}
+{% block title %}Генерация документов · DMG{% endblock %}
+
 {% block content %}
 
 <section class="card">
-  <h1>Мастер генерации: Договор(ы) + Приложение 1</h1>
-  <p class="muted">Выбери, что нужно сгенерировать, заполни единые ключи, и, при необходимости, добавь треки в Приложение 1.</p>
+  <h1>Генерация документов</h1>
+  <p class="muted">Выберите договор(ы), при необходимости добавьте Приложение 1, заполните ключи и скачайте результат.</p>
 </section>
 
 <section class="card">
   <h2>1) Что генерируем</h2>
 
-  {# Форма обновления состояния (GET). Мы ПЕРЕДАЁМ текущие введённые ключи скрытыми полями,
-     чтобы они не сбивались при клике "Показать поля и треки". #}
+  <!-- Форма обновления состояния (GET):
+       прокидываем введённые ключи через hidden, чтобы не сбивались -->
   <form method="get" action="{{ url_for('all_in_one') }}">
     <div class="chips">
       {% for f in templates %}
@@ -29,17 +30,17 @@
 
     {% if appendix_on %}
       <div class="grid" style="margin-top:10px;">
-        <label class="field">
+        <label class="field" style="position:relative;">
           <span>Артист (как в Excel)</span>
-          <input type="text" name="artist" value="{{ artist or '' }}" placeholder="Введите имя артиста">
+          <input type="text" name="artist" id="artist-input" value="{{ artist or '' }}" autocomplete="off" placeholder="Введите имя артиста">
+          <div id="artist-suggest" class="autocomplete-list" hidden></div>
         </label>
       </div>
     {% else %}
-      {# Если приложение выключено — всё равно протащим текущее значение artist (если было) #}
+      <!-- если приложение выключено — сохраним текущее значение -->
       <input type="hidden" name="artist" value="{{ artist or '' }}">
     {% endif %}
 
-    {# Сохранение уже введённых плейсхолдеров как hidden, чтобы они НЕ СБИВАЛИСЬ #}
     {% if placeholders %}
       {% for ph in placeholders %}
         <input type="hidden" name="ph:{{ ph }}" value="{{ values.get('ph:'+ph, '') }}">
@@ -57,7 +58,6 @@
 
   {% if placeholders %}
     <form method="post" action="{{ url_for('all_in_one_generate') }}">
-      {# выбранные шаблоны и настройки протаскиваем в POST #}
       {% for s in selected %}<input type="hidden" name="selected_templates" value="{{ s }}">{% endfor %}
       <input type="hidden" name="appendix" value="{{ 'on' if appendix_on else '' }}">
       <input type="hidden" name="artist" value="{{ artist or '' }}">
@@ -79,7 +79,7 @@
           {% elif tracks.empty %}
             <p class="muted">Треки не найдены для «{{ artist }}».</p>
           {% else %}
-            <p class="muted">Отметь, какие треки включить (по умолчанию — все):</p>
+            <p class="muted">Отметьте треки для включения (по умолчанию — все):</p>
             <ul class="files">
               {% for i, row in tracks.iterrows() %}
                 <li>
@@ -103,9 +103,72 @@
       </div>
     </form>
   {% else %}
-    <p class="muted">Выбери договоры и/или включи Приложение 1 выше и нажми «Показать поля и треки».</p>
+    <p class="muted">Выберите договоры и/или включите Приложение 1 выше и нажмите «Показать поля и треки».</p>
   {% endif %}
 </section>
 
-{% endblock %}
+<!-- ===== Autocomplete script ===== -->
+<script>
+(function(){
+  const input = document.getElementById('artist-input');
+  const list  = document.getElementById('artist-suggest');
+  if(!input || !list) return;
 
+  let timer = null;
+  let lastQuery = "";
+
+  function clearList(){
+    list.innerHTML = "";
+    list.hidden = true;
+  }
+
+  function render(items){
+    if(!items || !items.length){ clearList(); return; }
+    list.innerHTML = "";
+    items.forEach((name) => {
+      const li = document.createElement('div');
+      li.className = 'autocomplete-item';
+      li.textContent = name;
+      li.tabIndex = 0;
+      li.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        input.value = name;
+        clearList();
+      });
+      list.appendChild(li);
+    });
+    list.hidden = false;
+  }
+
+  async function fetchSuggest(q){
+    try{
+      const resp = await fetch(`/api/artists?q=${encodeURIComponent(q)}`);
+      if(!resp.ok) return clearList();
+      const data = await resp.json();
+      if(q === lastQuery) render(data);
+    }catch(e){
+      clearList();
+    }
+  }
+
+  input.addEventListener('input', () => {
+    const q = input.value.trim();
+    lastQuery = q;
+    if(timer) clearTimeout(timer);
+    if(q.length < 1){ clearList(); return; }
+    timer = setTimeout(() => fetchSuggest(q), 200);
+  });
+
+  // Закрытие по клику вне и по Esc
+  document.addEventListener('click', (e) => {
+    if(!list.contains(e.target) && e.target !== input){
+      clearList();
+    }
+  });
+  input.addEventListener('keydown', (e) => {
+    if(e.key === 'Escape'){ clearList(); }
+  });
+})();
+</script>
+
+{% endblock %}
