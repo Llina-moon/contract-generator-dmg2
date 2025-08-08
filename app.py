@@ -14,7 +14,7 @@ ALLOWED_SUFFIX = ".docx"
 
 # Excel с артистами/треками
 CATALOG_PATH = "data/report.xlsx"
-# Шаблон приложения 1 (точное имя файла)
+# Шаблон приложения 1 (точное имя файла в templates_docs/)
 APPENDIX_TEMPLATE_NAME = "приложение 1 — копия.docx"
 
 os.makedirs(GENERATED_DIR, exist_ok=True)
@@ -29,6 +29,7 @@ def list_templates():
     return sorted([f for f in os.listdir(TEMPLATE_DIR) if f.lower().endswith(ALLOWED_SUFFIX)])
 
 def extract_placeholders(docx_paths):
+    """Собираем уникальные плейсхолдеры из тела, таблиц и колонтитулов."""
     found = set()
     for path in docx_paths:
         doc = Document(path)
@@ -58,54 +59,89 @@ def extract_placeholders(docx_paths):
     return sorted(found)
 
 def replace_placeholders_preserve_runs(paragraph, mapping):
+    """
+    Бережная замена: сохраняем исходные runs (шрифты/размеры/стили).
+    Меняем ТОЛЬКО текст плейсхолдера на value и красим его в чёрный.
+    """
     if not paragraph.runs:
         return
+
     run_texts = [r.text or "" for r in paragraph.runs]
     full = "".join(run_texts)
     if not full:
         return
+
     matches = list(PLACEHOLDER_RE.finditer(full))
     if not matches:
         return
-    lengths, cumul, s = [len(t) for t in run_texts], [], 0
+
+    # префиксные суммы для маппинга глобального индекса к (run_idx, offset)
+    lengths = [len(t) for t in run_texts]
+    cumul = []
+    s = 0
     for L in lengths:
         cumul.append(s); s += L
-    def locate(pos:int):
+
+    def locate(pos: int):
         i = 0
         while i + 1 < len(cumul) and cumul[i + 1] <= pos:
             i += 1
         return i, pos - cumul[i]
+
+    # идём с конца, чтобы индексы не съезжали
     for m in reversed(matches):
-        ph = m.group(0)
-        if ph not in mapping:  # ключ именно с {скобками}
+        ph_text = m.group(0)
+        if ph_text not in mapping:
             continue
-        val = mapping[ph]
-        si, so = locate(m.start()); ei, eo = locate(m.end()-1)
+        value = mapping[ph_text]
+
+        start, end = m.start(), m.end()
+        si, so = locate(start)
+        ei, eo = locate(end - 1)
+
         if si == ei:
             r = paragraph.runs[si]
             t = r.text or ""
-            r.text = (t[:so]) + val + (t[eo+1:])
-            try: r.font.color.rgb = RGBColor(0,0,0)
-            except: pass
+            before = t[:so]
+            after = t[eo + 1:]
+            r.text = before + value + after
+            try:
+                r.font.color.rgb = RGBColor(0, 0, 0)
+            except Exception:
+                pass
         else:
-            r_start, r_end = paragraph.runs[si], paragraph.runs[ei]
-            t_start, t_end = (r_start.text or ""), (r_end.text or "")
-            before, after = t_start[:so], t_end[eo+1:]
-            r_start.text = before + val
-            try: r_start.font.color.rgb = RGBColor(0,0,0)
-            except: pass
+            r_start = paragraph.runs[si]
+            r_end   = paragraph.runs[ei]
+
+            t_start = r_start.text or ""
+            t_end   = r_end.text or ""
+
+            before = t_start[:so]
+            after  = t_end[eo + 1:]
+
+            r_start.text = before + value
+            try:
+                r_start.font.color.rgb = RGBColor(0, 0, 0)
+            except Exception:
+                pass
+
             r_end.text = after
-            for idx in range(si+1, ei):
+
+            # промежуточные run'ы очищаем
+            for idx in range(si + 1, ei):
                 paragraph.runs[idx].text = ""
 
 def replace_in_doc(doc, mapping):
+    # основной текст
     for p in doc.paragraphs:
         replace_placeholders_preserve_runs(p, mapping)
+    # таблицы
     for t in doc.tables:
         for row in t.rows:
             for cell in row.cells:
                 for p in cell.paragraphs:
                     replace_placeholders_preserve_runs(p, mapping)
+    # колонтитулы
     for section in doc.sections:
         for p in section.header.paragraphs:
             replace_placeholders_preserve_runs(p, mapping)
@@ -115,6 +151,7 @@ def replace_in_doc(doc, mapping):
 # ====== EXCEL → ПРИЛОЖЕНИЕ 1 ======
 _catalog_df = None
 def load_catalog():
+    """Читаем Excel и нормализуем строки."""
     global _catalog_df
     if _catalog_df is None:
         if not os.path.exists(CATALOG_PATH):
@@ -127,11 +164,11 @@ def load_catalog():
     return _catalog_df
 
 def rows_for_artist(artist_name: str):
+    """Находим все треки артиста (учитывает 'фиты', если они в artist_name)."""
     df = load_catalog()
     q = re.sub(r"\s+", " ", (artist_name or "")).strip().lower()
     if not q:
         return df.iloc[0:0]
-    # Ищем в artist_name по вхождению (учтёт и «фиты», если они записаны в этой колонке)
     mask = df["artist_name"].str.lower().str.contains(q, na=False)
     rows = df[mask].copy()
     sort_cols = [c for c in ["album_name", "track_name"] if c in rows.columns]
@@ -140,9 +177,10 @@ def rows_for_artist(artist_name: str):
     return rows
 
 def get_appendix_table(doc: Document) -> Table:
+    """Берём первую таблицу в шаблоне приложения (если другая — скажи, сделаем поиск по маркеру)."""
     if not doc.tables:
         raise RuntimeError("В шаблоне приложения нет таблиц.")
-    return doc.tables[0]  # предполагаем, что нужная таблица — первая
+    return doc.tables[0]
 
 def clear_cell(cell):
     for p in cell.paragraphs:
@@ -155,6 +193,7 @@ def set_row_cells(row, values):
             row.cells[i].paragraphs[0].add_run("" if val is None else str(val))
 
 def clone_row(table: Table, template_idx: int):
+    """Клонируем строку таблицы (переносим стиль первого параграфа)."""
     new = table.add_row()
     for i, cell in enumerate(table.rows[template_idx].cells):
         if i < len(new.cells):
@@ -162,18 +201,20 @@ def clone_row(table: Table, template_idx: int):
                 new.cells[i].paragraphs[0].style = cell.paragraphs[0].style
     return new
 
-def map_record_to_values(rec: dict):
+def map_record_to_values(idx: int, rec: dict):
     """
     Порядок колонок "Приложения 1":
-    1) Исполнитель            -> artist_name
-    2) Композиция             -> track_name
-    3) Автор слов             -> lyricist
-    4) Автор музыки           -> composer
-    5) Альбом                 -> album_name
-    6) Доля авторских прав    -> author_right
-    7) Доля смежных прав      -> related_right
-    8) Территория             -> countries (если пусто — "Весь мир")
-    9) Копирайт               -> label (если пусто — "Divine Music")
+    1) № п/п
+    2) Исполнитель            -> artist_name
+    3) Композиция             -> track_name
+    4) Автор слов             -> lyricist
+    5) Автор музыки           -> composer
+    6) Альбом                 -> album_name
+    7) Доля авторских прав    -> author_right
+    8) Доля смежных прав      -> related_right
+    9) Территория             -> countries (если пусто — "Весь мир")
+    10) Копирайт              -> label (если пусто — "Divine Music")
+    11) Примечание            -> rec["note"] если появится, иначе пусто
     """
     artist      = rec.get("artist_name", "")
     track       = rec.get("track_name", "")
@@ -184,21 +225,26 @@ def map_record_to_values(rec: dict):
     neigh_share = rec.get("related_right", "")
     territory   = rec.get("countries", "") or "Весь мир"
     copyright_  = rec.get("label", "") or "Divine Music"
-    return [artist, track, lyrics, music, album, auth_share, neigh_share, territory, copyright_]
+    note        = rec.get("note", "")
+    return [str(idx), artist, track, lyrics, music, album, auth_share, neigh_share, territory, copyright_, note]
 
 def fill_appendix_table(doc: Document, df: pd.DataFrame):
+    """Заполняем таблицу Приложения 1, нумеруем строки с 1, расширяем на любое кол-во треков."""
     table = get_appendix_table(doc)
-    # Частый случай: первая строка — заголовки, вторая — образец
+    # Часто: 1-я строка — заголовки, 2-я — строка-образец
     template_row_idx = 1 if len(table.rows) > 1 else 0
+
     rows = df.to_dict(orient="records")
     if not rows:
         return
-    # Заполняем первую (образец)
-    set_row_cells(table.rows[template_row_idx], map_record_to_values(rows[0]))
-    # Остальные строки — клонируем образец
-    for rec in rows[1:]:
+
+    # первая запись в шаблонной строке с №=1
+    set_row_cells(table.rows[template_row_idx], map_record_to_values(1, rows[0]))
+
+    # остальные — клонируем образец (№ = 2..N)
+    for i, rec in enumerate(rows[1:], start=2):
         r = clone_row(table, template_row_idx)
-        set_row_cells(r, map_record_to_values(rec))
+        set_row_cells(r, map_record_to_values(i, rec))
 
 # ====== РОУТЫ: главная (договоры) ======
 @app.route("/")
@@ -267,12 +313,18 @@ def generate():
 def appendix():
     artist_q = request.args.get("artist", "").strip()
     tracks = None
+    placeholders = []
+    # достаём плейсхолдеры из шаблона приложения, чтобы показать инпуты
+    appx_path = os.path.join(TEMPLATE_DIR, APPENDIX_TEMPLATE_NAME)
+    if os.path.exists(appx_path):
+        placeholders = extract_placeholders([appx_path])
+
     if artist_q:
         try:
             tracks = rows_for_artist(artist_q)
         except Exception as e:
             flash(f"Ошибка чтения Excel: {e}", "warning")
-    return render_template("appendix.html", artist=artist_q, tracks=tracks)
+    return render_template("appendix.html", artist=artist_q, tracks=tracks, placeholders=placeholders)
 
 @app.route("/appendix/generate", methods=["POST"])
 def appendix_generate():
@@ -289,10 +341,17 @@ def appendix_generate():
         flash(f"Не найден шаблон приложения: {APPENDIX_TEMPLATE_NAME}", "warning")
         return redirect(url_for("appendix", artist=artist_q))
 
+    # собираем значения для плейсхолдеров из формы (поля вида name="ph:{...}")
+    mapping = {k[3:]: v for k, v in request.form.items() if k.startswith("ph:")}
+
     doc = Document(appx_path)
+    # сначала подставим плейсхолдеры в тексте
+    replace_in_doc(doc, mapping)
+    # затем заполним таблицу треками
     fill_appendix_table(doc, rows)
 
-    fio_value = (request.form.get("fio") or "").strip() or "БезФИО"
+    # имя файла по ФИО (если передали)
+    fio_value = (mapping.get("{ФИО}", "") or "").strip() or "БезФИО"
     safe_fio = re.sub(r'[\\/*?:"<>|]', "", fio_value)
     out_name = f"{safe_fio} приложение.docx"
     out_path = os.path.join(GENERATED_DIR, out_name)
