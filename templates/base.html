@@ -3,26 +3,40 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}DMG Generator{% endblock %}</title>
+  <title>{% block title %}Генерация документов · DMG{% endblock %}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='dmg.css') }}">
 </head>
 <body>
+  {% set gen_active = ' active' if request.endpoint and request.endpoint.startswith('all_in_one') else '' %}
+  {% set dl_active  = ' active' if request.endpoint in ['downloads','download_file'] else '' %}
+
   <div class="bg"></div>
   <header class="wrap header">
     <div class="brand">
       <div class="logo">DMG</div>
       <div class="title">Divine Music Group</div>
     </div>
-    <nav class="nav">
-      <a href="{{ url_for('all_in_one') }}" class="btn outline">Мастер</a>
-      <a href="{{ url_for('index') }}" class="btn ghost">Генератор</a>
-      <a href="{{ url_for('downloads') }}" class="btn ghost">Скачивания</a>
-      <a href="https://vk.com/nickorodriguezzz" target="_blank" class="btn outline">Связаться</a>
-      <a href="{{ url_for('appendix') }}" class="btn ghost">Приложение 1</a>
 
+    <nav class="nav">
+      <a href="{{ url_for('all_in_one') }}"
+         class="btn ghost{{ gen_active }}"
+         {% if gen_active %}aria-current="page"{% endif %}>
+        Генерация
+      </a>
+      <a href="{{ url_for('downloads') }}"
+         class="btn ghost{{ dl_active }}"
+         {% if dl_active %}aria-current="page"{% endif %}>
+        Скачивания
+      </a>
+      <a href="https://vk.com/nickorodriguezzz"
+         target="_blank"
+         rel="noopener noreferrer"
+         class="btn outline">
+        Связаться
+      </a>
     </nav>
   </header>
 
@@ -40,7 +54,7 @@
   </main>
 
   <footer class="wrap footer">
-    <p>© DMG · Онлайн-генератор договоров · Flask + python-docx</p>
+    <p>© DMG · Онлайн-генератор документов · Flask + python-docx</p>
   </footer>
 </body>
 </html>
