@@ -9,6 +9,9 @@
 
 <section class="card">
   <h2>1) Что генерируем</h2>
+
+  {# Форма обновления состояния (GET). Мы ПЕРЕДАЁМ текущие введённые ключи скрытыми полями,
+     чтобы они не сбивались при клике "Показать поля и треки". #}
   <form method="get" action="{{ url_for('all_in_one') }}">
     <div class="chips">
       {% for f in templates %}
@@ -31,6 +34,16 @@
           <input type="text" name="artist" value="{{ artist or '' }}" placeholder="Введите имя артиста">
         </label>
       </div>
+    {% else %}
+      {# Если приложение выключено — всё равно протащим текущее значение artist (если было) #}
+      <input type="hidden" name="artist" value="{{ artist or '' }}">
+    {% endif %}
+
+    {# Сохранение уже введённых плейсхолдеров как hidden, чтобы они НЕ СБИВАЛИСЬ #}
+    {% if placeholders %}
+      {% for ph in placeholders %}
+        <input type="hidden" name="ph:{{ ph }}" value="{{ values.get('ph:'+ph, '') }}">
+      {% endfor %}
     {% endif %}
 
     <div class="actions">
@@ -41,8 +54,10 @@
 
 <section class="card">
   <h2>2) Единые ключи</h2>
+
   {% if placeholders %}
     <form method="post" action="{{ url_for('all_in_one_generate') }}">
+      {# выбранные шаблоны и настройки протаскиваем в POST #}
       {% for s in selected %}<input type="hidden" name="selected_templates" value="{{ s }}">{% endfor %}
       <input type="hidden" name="appendix" value="{{ 'on' if appendix_on else '' }}">
       <input type="hidden" name="artist" value="{{ artist or '' }}">
@@ -51,7 +66,7 @@
         {% for ph in placeholders %}
           <label class="field">
             <span>{{ ph }}</span>
-            <input type="text" name="ph:{{ ph }}" placeholder="{{ ph }}">
+            <input type="text" name="ph:{{ ph }}" placeholder="{{ ph }}" value="{{ values.get('ph:'+ph, '') }}">
           </label>
         {% endfor %}
       </div>
@@ -93,3 +108,4 @@
 </section>
 
 {% endblock %}
+
