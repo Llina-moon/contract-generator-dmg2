@@ -1,13 +1,19 @@
 services:
   - type: web
-    name: contract-generator-dmg
+    name: contract-generator-dmg2
     env: python
     plan: free
-    buildCommand: pip install -r requirements.txt
+    buildCommand: |
+      pip install -U pip
+      pip install -r requirements.txt --only-binary=:all:
     startCommand: gunicorn app:app
     envVars:
       - key: SECRET_KEY
         generateValue: true
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: WEB_CONCURRENCY
+        value: "2"
     disk:
       name: generator-data
       mountPath: /opt/render/project/src/generated
